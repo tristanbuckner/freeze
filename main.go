@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -133,7 +134,9 @@ func main() {
 	autoHeight := config.Height == 0
 	autoWidth := config.Width == 0
 
-	if config.Output == "" {
+	istty := isatty.IsTerminal(os.Stdout.Fd())
+
+	if config.Output == "" && istty {
 		config.Output = defaultOutputFilename
 	}
 
@@ -396,19 +399,23 @@ func main() {
 		}
 	}
 
-	istty := isatty.IsTerminal(os.Stdout.Fd())
+	outFile, err := getOutputWriter(istty, config.Output)
+	defer outFile.Close()
+	if err != nil {
+		printErrorFatal("failed to open file", err)
+	}
 
 	switch {
-	case strings.HasSuffix(config.Output, ".png"):
+	case strings.HasSuffix(config.Output, ".png") || (config.PNGOutput && config.Output == ""):
 		// use libsvg conversion.
-		svgConversionErr := libsvgConvert(doc, imageWidth, imageHeight, config.Output)
+		svgConversionErr := libsvgConvert(doc, imageWidth, imageHeight, outFile)
 		if svgConversionErr == nil {
 			printFilenameOutput(config.Output)
 			break
 		}
 
 		// could not convert with libsvg, try resvg
-		svgConversionErr = resvgConvert(doc, imageWidth, imageHeight, config.Output)
+		svgConversionErr = resvgConvert(doc, imageWidth, imageHeight, outFile)
 		if svgConversionErr != nil {
 			printErrorFatal("Unable to convert SVG to PNG", svgConversionErr)
 		}
@@ -417,7 +424,7 @@ func main() {
 	default:
 		// output file specified.
 		if config.Output != "" {
-			err = doc.WriteToFile(config.Output)
+			_, err = doc.WriteTo(outFile)
 			if err != nil {
 				printErrorFatal("Unable to write output", err)
 			}
@@ -451,6 +458,14 @@ func main() {
 			printErrorFatal("Unable to write output", err)
 		}
 	}
+}
+
+func getOutputWriter(istty bool, fileName string) (io.WriteCloser, error) {
+	if !istty && fileName == "" {
+		return os.Stdout, nil
+	}
+	println(fileName)
+	return os.Create(fileName)
 }
 
 var outputHeader = lipgloss.NewStyle().Foreground(lipgloss.Color("#F1F1F1")).Background(lipgloss.Color("#6C50FF")).Bold(true).Padding(0, 1).MarginRight(1).SetString("WROTE")

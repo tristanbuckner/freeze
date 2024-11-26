@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"os/exec"
 
@@ -11,7 +12,7 @@ import (
 	"github.com/kanrichan/resvg-go"
 )
 
-func libsvgConvert(doc *etree.Document, _, _ float64, output string) error {
+func libsvgConvert(doc *etree.Document, _, _ float64, output io.Writer) error {
 	_, err := exec.LookPath("rsvg-convert")
 	if err != nil {
 		return err //nolint: wrapcheck
@@ -24,13 +25,15 @@ func libsvgConvert(doc *etree.Document, _, _ float64, output string) error {
 
 	// rsvg-convert is installed use that to convert the SVG to PNG,
 	// since it is faster.
-	rsvgConvert := exec.Command("rsvg-convert", "-o", output)
+	rsvgConvert := exec.Command("rsvg-convert")
 	rsvgConvert.Stdin = bytes.NewReader(svg)
+	rsvgConvert.Stdout = output
+	rsvgConvert.Stderr = os.Stderr
 	err = rsvgConvert.Run()
 	return err //nolint: wrapcheck
 }
 
-func resvgConvert(doc *etree.Document, w, h float64, output string) error {
+func resvgConvert(doc *etree.Document, w, h float64, output io.Writer) error {
 	svg, err := doc.WriteToBytes()
 	if err != nil {
 		return err //nolint: wrapcheck
@@ -90,7 +93,7 @@ func resvgConvert(doc *etree.Document, w, h float64, output string) error {
 		return err //nolint: wrapcheck
 	}
 
-	err = os.WriteFile(output, png, 0o600)
+	_, err = output.Write(png)
 	if err != nil {
 		return err //nolint: wrapcheck
 	}
